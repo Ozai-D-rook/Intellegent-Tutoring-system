@@ -120,6 +120,55 @@ const aiService = {
             console.error("AI Service Error (Classify):", error);
             return { level: "Beginner", reason: "Fallback due to AI error." };
         }
+    },
+
+    /**
+     * Generate 10-question Placement Test (IQ/Logic)
+     */
+    async generatePlacementTest() {
+        try {
+            if (!process.env.AI_API_KEY) throw new Error("API Key Missing");
+
+            const prompt = `
+                Generate a 10-question placement test to assess a student's knowledge in Physics.
+                Focus specifically on these three topics:
+                1. Gravity (3 questions)
+                2. Molecular Property of Matter (4 questions)
+                3. Sound (3 questions)
+                
+                The questions should range from basic definitions to application of principles.
+                
+                Return ONLY raw JSON array. format:
+                [
+                    { 
+                        "id": 1,
+                        "question": "...", 
+                        "options": ["A", "B", "C", "D"], 
+                        "correctIndex": 0, 
+                        "category": "Logic" 
+                    }
+                ]
+            `;
+
+            const result = await model.generateContent(prompt);
+            const response = await result.response;
+            const text = response.text();
+
+            // Clean markdown
+            const cleanJson = text.replace(/```json/g, '').replace(/```/g, '').trim();
+            return JSON.parse(cleanJson);
+
+        } catch (error) {
+            console.error("AI Service Error (Placement):", error);
+            // Fallback mock data
+            return Array(5).fill(null).map((_, i) => ({
+                id: i + 1,
+                question: `Mock Logic Question ${i + 1}?`,
+                options: ["Option A", "Option B", "Option C", "Option D"],
+                correctIndex: 0,
+                category: "Mock"
+            }));
+        }
     }
 };
 

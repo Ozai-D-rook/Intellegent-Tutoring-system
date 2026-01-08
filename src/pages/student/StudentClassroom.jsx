@@ -2,8 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useAI } from '../../context/AIContext';
 import { useData } from '../../context/DataContext';
-import { ArrowLeft, Check, Play, FileText, Lock, ChevronRight, HelpCircle, CheckCircle, AlertCircle } from 'lucide-react';
+import { ArrowLeft, Check, Play, FileText, Lock, ChevronRight, HelpCircle, CheckCircle, AlertCircle, Menu, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import ReactMarkdown from 'react-markdown';
+import rehypeRaw from 'rehype-raw';
 
 const StudentClassroom = () => {
     const { courseId } = useParams();
@@ -15,6 +17,7 @@ const StudentClassroom = () => {
     const [currentStepIndex, setCurrentStepIndex] = useState(0);
     const [completedSteps, setCompletedSteps] = useState([0]); // Track completed step indices. Default 1st step unlocked.
     const [isQuizOpen, setIsQuizOpen] = useState(false);
+    const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Mobile sidebar state
 
     // Derived state for current step
     const currentStep = steps.length > 0 && steps[currentStepIndex] ? steps[currentStepIndex] : null;
@@ -150,109 +153,193 @@ const StudentClassroom = () => {
     };
 
     return (
-        <div className="max-w-7xl mx-auto h-[calc(100vh-100px)] flex flex-col md:flex-row gap-6">
+        <div className="max-w-7xl mx-auto h-[calc(100vh-100px)] flex flex-col md:flex-row gap-6 relative">
 
-            {/* Sidebar: Steps List */}
-            <div className="w-full md:w-80 bg-white rounded-3xl shadow-lg border border-gray-100 overflow-hidden flex flex-col h-full">
-                <div className="p-6 border-b border-gray-100 bg-gray-50">
-                    <button
-                        onClick={() => navigate('/student/courses')}
-                        className="flex items-center text-xs text-gray-500 hover:text-gray-900 mb-4 transition-colors font-bold uppercase tracking-wider"
-                    >
-                        <ArrowLeft className="w-3 h-3 mr-1" />
-                        Back to Catalog
-                    </button>
-                    <h2 className="text-xl font-bold text-gray-900 leading-tight">{currentCourse.title}</h2>
-                    <p className="text-sm text-gray-500 mt-2">{completedSteps.length - 1} / {steps.length} Steps Completed</p>
-
-                    {/* Progress Bar */}
-                    <div className="w-full bg-gray-200 rounded-full h-2 mt-4">
-                        <div
-                            className="bg-green-500 h-2 rounded-full transition-all duration-500"
-                            style={{ width: `${((completedSteps.length - 1) / steps.length) * 100}%` }}
-                        />
-                    </div>
-                </div>
-
-                <div className="flex-1 overflow-y-auto p-4 space-y-2">
-                    {steps.length === 0 ? (
-                        <div className="text-center p-8 text-gray-400 text-sm">
-                            No steps added to this course yet.
-                        </div>
-                    ) : (
-                        steps.map((step, index) => {
-                            const isLocked = !completedSteps.includes(index);
-                            const isCompleted = completedSteps.includes(index + 1);
-                            const isActive = index === currentStepIndex;
-
-                            return (
-                                <button
-                                    key={step.id}
-                                    onClick={() => !isLocked && setCurrentStepIndex(index)}
-                                    disabled={isLocked}
-                                    className={`w-full p-4 rounded-xl text-left border transition-all flex justify-between items-center group ${isActive
-                                        ? 'bg-blue-50 border-blue-200 shadow-sm ring-1 ring-blue-100'
-                                        : isLocked
-                                            ? 'bg-gray-50 border-transparent opacity-60 cursor-not-allowed'
-                                            : 'bg-white border-transparent hover:bg-gray-50 hover:border-gray-200'
-                                        }`}
-                                >
-                                    <div className="flex items-center space-x-3">
-                                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shadow-sm ${isActive ? 'bg-blue-600 text-white' :
-                                            isCompleted ? 'bg-green-100 text-green-600' : 'bg-gray-200 text-gray-500'
-                                            }`}>
-                                            {isCompleted && !isActive ? <Check className="w-4 h-4" /> : index + 1}
-                                        </div>
-                                        <div>
-                                            <p className={`font-bold text-sm ${isActive ? 'text-blue-900' : 'text-gray-700'}`}>{step.title}</p>
-                                            <p className="text-xs text-gray-400 mt-0.5 flex items-center">
-                                                {step.type === 'Video' ? <Play className="w-3 h-3 mr-1" /> : <FileText className="w-3 h-3 mr-1" />}
-                                                {step.quiz_data ? '• Quiz' : ''}
-                                            </p>
-                                        </div>
-                                    </div>
-                                    {isLocked && <Lock className="w-4 h-4 text-gray-300" />}
-                                </button>
-                            );
-                        })
-                    )}
-                </div>
+            {/* Mobile Header (Visible only on small screens) */}
+            <div className="md:hidden flex items-center justify-between p-4 bg-white border-b border-gray-100 mb-4 rounded-xl shadow-sm">
+                <button
+                    onClick={() => setIsSidebarOpen(true)}
+                    className="p-2 text-gray-600 hover:bg-gray-50 rounded-lg"
+                >
+                    <Menu className="w-6 h-6" />
+                </button>
+                <div className="font-bold text-gray-900 truncate flex-1 ml-4">{currentCourse.title}</div>
             </div>
+
+            {/* Sidebar: Steps List (Desktop: Static, Mobile: Drawer) */}
+            <AnimatePresence>
+                {(isSidebarOpen || window.innerWidth >= 768) && (
+                    <>
+                        {/* Mobile Overlay */}
+                        <motion.div
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            exit={{ opacity: 0 }}
+                            onClick={() => setIsSidebarOpen(false)}
+                            className={`md:hidden fixed inset-0 bg-black/50 z-40 ${!isSidebarOpen ? 'hidden' : ''}`}
+                        />
+
+                        <motion.div
+                            initial={{ x: -300 }}
+                            animate={{ x: 0 }}
+                            exit={{ x: -300 }}
+                            transition={{ type: "spring", damping: 25, stiffness: 200 }}
+                            className={`
+                                fixed md:static inset-y-0 left-0 z-50 w-80 bg-white md:rounded-3xl shadow-2xl md:shadow-lg border-r md:border border-gray-100 overflow-hidden flex flex-col h-full
+                                ${!isSidebarOpen ? 'hidden md:flex' : 'flex'}
+                            `}
+                        >
+                            <div className="p-6 border-b border-gray-100 bg-gray-50">
+                                <div className="flex justify-between items-center mb-4">
+                                    <button
+                                        onClick={() => navigate('/student/courses')}
+                                        className="flex items-center text-xs text-gray-500 hover:text-gray-900 transition-colors font-bold uppercase tracking-wider"
+                                    >
+                                        <ArrowLeft className="w-3 h-3 mr-1" />
+                                        Back to Catalog
+                                    </button>
+                                    {/* Mobile Close Button */}
+                                    <button
+                                        onClick={() => setIsSidebarOpen(false)}
+                                        className="md:hidden p-1 text-gray-400 hover:text-gray-600"
+                                    >
+                                        <X className="w-5 h-5" />
+                                    </button>
+                                </div>
+
+                                <h2 className="text-xl font-bold text-gray-900 leading-tight">{currentCourse.title}</h2>
+                                <p className="text-sm text-gray-500 mt-2">{completedSteps.length - 1} / {steps.length} Steps Completed</p>
+
+                                {/* Progress Bar */}
+                                <div className="w-full bg-gray-200 rounded-full h-2 mt-4">
+                                    <div
+                                        className="bg-green-500 h-2 rounded-full transition-all duration-500"
+                                        style={{ width: `${((completedSteps.length - 1) / steps.length) * 100}%` }}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex-1 overflow-y-auto p-4 space-y-2">
+                                {steps.length === 0 ? (
+                                    <div className="text-center p-8 text-gray-400 text-sm">
+                                        No steps added to this course yet.
+                                    </div>
+                                ) : (
+                                    steps.map((step, index) => {
+                                        const isLocked = !completedSteps.includes(index);
+                                        const isCompleted = completedSteps.includes(index + 1);
+                                        const isActive = index === currentStepIndex;
+
+                                        return (
+                                            <button
+                                                key={step.id}
+                                                onClick={() => {
+                                                    if (!isLocked) {
+                                                        setCurrentStepIndex(index);
+                                                        setIsSidebarOpen(false); // Close sidebar on selection (mobile)
+                                                    }
+                                                }}
+                                                disabled={isLocked}
+                                                className={`w-full p-4 rounded-xl text-left border transition-all flex justify-between items-center group ${isActive
+                                                    ? 'bg-blue-50 border-blue-200 shadow-sm ring-1 ring-blue-100'
+                                                    : isLocked
+                                                        ? 'bg-gray-50 border-transparent opacity-60 cursor-not-allowed'
+                                                        : 'bg-white border-transparent hover:bg-gray-50 hover:border-gray-200'
+                                                    }`}
+                                            >
+                                                <div className="flex items-center space-x-3">
+                                                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold shadow-sm flex-shrink-0 ${isActive ? 'bg-blue-600 text-white' :
+                                                        isCompleted ? 'bg-green-100 text-green-600' : 'bg-gray-200 text-gray-500'
+                                                        }`}>
+                                                        {isCompleted && !isActive ? <Check className="w-4 h-4" /> : index + 1}
+                                                    </div>
+                                                    <div>
+                                                        <p className={`font-bold text-sm ${isActive ? 'text-blue-900' : 'text-gray-700'} line-clamp-1`}>{step.title}</p>
+                                                        <p className="text-xs text-gray-400 mt-0.5 flex items-center">
+                                                            {step.type === 'Video' ? <Play className="w-3 h-3 mr-1" /> : <FileText className="w-3 h-3 mr-1" />}
+                                                            {step.quiz_data ? '• Quiz' : ''}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                {isLocked && <Lock className="w-4 h-4 text-gray-300" />}
+                                            </button>
+                                        );
+                                    })
+                                )}
+                            </div>
+                        </motion.div>
+                    </>
+                )}
+            </AnimatePresence>
 
             {/* Main Content Area */}
             <div className="flex-1 bg-white rounded-3xl shadow-lg border border-gray-100 overflow-hidden flex flex-col h-full relative">
                 {steps.length > 0 && currentStep ? (
                     <>
-                        <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+                        <div className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
                             <div className="max-w-3xl mx-auto pb-24"> {/* Padding bottom for footer */}
                                 <span className="inline-block px-3 py-1 bg-gray-100 text-gray-600 rounded-full text-xs font-bold uppercase tracking-wider mb-4">
                                     Step {currentStepIndex + 1}
                                 </span>
-                                <h1 className="text-4xl font-bold text-gray-900 mb-8">{currentStep.title}</h1>
+                                <h1 className="text-2xl md:text-4xl font-bold text-gray-900 mb-6 md:mb-8">{currentStep.title}</h1>
 
-                                <div className="prose prose-lg prose-blue max-w-none text-gray-600 leading-relaxed">
-                                    {/* Simple Markdown Rendering (Replace with proper parser later if needed) */}
-                                    <div className="whitespace-pre-wrap">{currentStep.body || "No content for this step."}</div>
+                                <div className="prose prose-lg prose-blue max-w-none text-gray-600 leading-relaxed font-sans">
+                                    <ReactMarkdown
+                                        rehypePlugins={[rehypeRaw]}
+                                        components={{
+                                            // Custom Image Renderer for Responsiveness
+                                            img: ({ node, ...props }) => (
+                                                <img
+                                                    {...props}
+                                                    className="rounded-xl shadow-md max-w-full h-auto mx-auto my-6 border border-gray-100"
+                                                    alt={props.alt || "Lesson Image"}
+                                                />
+                                            ),
+                                            // Custom Link/Iframe Renderer to support Video Embeds if passed as raw HTML or via special syntax
+                                            iframe: ({ node, ...props }) => (
+                                                <div className="aspect-video w-full my-6 rounded-xl overflow-hidden shadow-lg">
+                                                    <iframe
+                                                        {...props}
+                                                        className="w-full h-full"
+                                                        loading="lazy"
+                                                    />
+                                                </div>
+                                            ),
+                                            // Ensure links open in new tab if external
+                                            a: ({ node, ...props }) => (
+                                                <a
+                                                    {...props}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="text-blue-600 hover:text-blue-800 underline transition-colors"
+                                                >
+                                                    {props.children}
+                                                </a>
+                                            )
+                                        }}
+                                    >
+                                        {currentStep.body || "No content for this step."}
+                                    </ReactMarkdown>
                                 </div>
                             </div>
                         </div>
 
                         {/* Action Footer */}
-                        <div className="absolute bottom-0 inset-x-0 bg-white border-t border-gray-100 p-6 flex justify-between items-center bg-gray-50/80 backdrop-blur-md">
+                        <div className="absolute bottom-0 inset-x-0 bg-white border-t border-gray-100 p-4 md:p-6 flex justify-between items-center bg-gray-50/80 backdrop-blur-md">
                             <button
                                 onClick={() => setCurrentStepIndex(Math.max(0, currentStepIndex - 1))}
                                 disabled={currentStepIndex === 0}
-                                className="px-6 py-3 text-gray-500 font-bold hover:text-gray-900 disabled:opacity-30 disabled:hover:text-gray-500 transition-colors"
+                                className="px-4 md:px-6 py-2 md:py-3 text-gray-500 font-bold hover:text-gray-900 disabled:opacity-30 disabled:hover:text-gray-500 transition-colors text-sm md:text-base"
                             >
-                                Previous Step
+                                Previous
                             </button>
 
                             <button
                                 onClick={handleNext}
-                                className="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-200 flex items-center space-x-2 transition-all transform active:scale-95"
+                                className="px-6 md:px-8 py-2 md:py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-200 flex items-center space-x-2 transition-all transform active:scale-95 text-sm md:text-base"
                             >
-                                <span>{currentStep.quiz_data ? 'Take Quiz & Continue' : 'Mark Complete & Continue'}</span>
-                                <ChevronRight className="w-5 h-5" />
+                                <span>{currentStep.quiz_data ? 'Take Quiz' : 'Complete'}</span>
+                                <ChevronRight className="w-4 h-4 md:w-5 md:h-5" />
                             </button>
                         </div>
                     </>

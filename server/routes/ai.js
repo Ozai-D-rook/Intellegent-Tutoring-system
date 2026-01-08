@@ -26,6 +26,12 @@ router.post('/diagnostic', async (req, res) => {
     res.json({ questions });
 });
 
+// POST /api/ai/placement
+router.post('/placement', async (req, res) => {
+    const questions = await aiService.generatePlacementTest();
+    res.json({ questions });
+});
+
 // POST /api/ai/classify
 router.post('/classify', async (req, res) => {
     const { performance } = req.body;

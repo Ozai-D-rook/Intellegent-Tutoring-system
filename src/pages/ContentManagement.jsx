@@ -1,7 +1,20 @@
 import React, { useState, useEffect } from 'react';
 import { useData } from '../context/DataContext';
-import { Plus, Search, Trash2, Video, FileText, HelpCircle, X, Edit2, Save, Layers, ChevronRight, Check } from 'lucide-react';
+import { Plus, Search, Trash2, Video, FileText, HelpCircle, X, Edit2, Save, Layers, ChevronRight, Check, Image as ImageIcon } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import ReactMarkdown from 'react-markdown';
+import rehypeRaw from 'rehype-raw';
+
+const ToolbarBtn = ({ icon, label, onClick }) => (
+    <button
+        type="button"
+        onClick={onClick}
+        className="p-1.5 text-gray-600 hover:bg-white hover:shadow-sm rounded transition-all"
+        title={label}
+    >
+        {icon}
+    </button>
+);
 
 const ContentManagement = () => {
     const { content, addContent, removeContent, updateContent, fetchCourseSteps, addStep, updateStep, deleteStep } = useData();
@@ -185,7 +198,7 @@ const ContentManagement = () => {
 
                         <div className="flex justify-between items-center text-xs text-gray-400 border-t pt-4 border-gray-50">
                             <span>{new Date(item.created_at).toLocaleDateString()}</span>
-                            <div className="flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <div className="flex space-x-1">
                                 <button
                                     onClick={() => handleOpenBuilder(item)}
                                     className="p-2 hover:bg-purple-50 text-purple-600 rounded-lg transition-colors flex items-center space-x-1"
@@ -400,21 +413,70 @@ const CourseBuilder = ({ course, steps, onClose, onSaveStep, onDeleteStep, isSte
                                     {/* Content Editor */}
                                     <div className="grid grid-cols-2 gap-8 h-[400px]">
                                         <div className="flex flex-col">
-                                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Markdown Content</label>
+                                            <div className="flex justify-between items-end mb-2">
+                                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Markdown Content</label>
+                                                {/* Toolbar */}
+                                                <div className="flex bg-gray-100 rounded-lg p-1 space-x-1">
+                                                    <ToolbarBtn icon={<span className="font-bold font-serif">B</span>} label="Bold" onClick={() => {
+                                                        const ta = document.getElementById('step-body');
+                                                        const [start, end] = [ta.selectionStart, ta.selectionEnd];
+                                                        const text = stepData.body;
+                                                        const newText = text.substring(0, start) + "**" + text.substring(start, end) + "**" + text.substring(end);
+                                                        setStepData({ ...stepData, body: newText });
+                                                    }} />
+                                                    <ToolbarBtn icon={<span className="italic font-serif">I</span>} label="Italic" onClick={() => {
+                                                        const ta = document.getElementById('step-body');
+                                                        const [start, end] = [ta.selectionStart, ta.selectionEnd];
+                                                        const text = stepData.body;
+                                                        const newText = text.substring(0, start) + "*" + text.substring(start, end) + "*" + text.substring(end);
+                                                        setStepData({ ...stepData, body: newText });
+                                                    }} />
+                                                    <div className="w-px bg-gray-300 mx-1" />
+                                                    <ToolbarBtn icon={<FileText size={14} />} label="Link" onClick={() => {
+                                                        setStepData({ ...stepData, body: stepData.body + "[Link Text](https://example.com) " });
+                                                    }} />
+                                                    <ToolbarBtn icon={<ImageIcon size={14} />} label="Image" onClick={() => {
+                                                        setStepData({ ...stepData, body: stepData.body + "\n![Image Alt](https://placehold.co/600x400) \n" });
+                                                    }} />
+                                                    <ToolbarBtn icon={<Video size={14} />} label="Video" onClick={() => {
+                                                        setStepData({ ...stepData, body: stepData.body + "\n<iframe src=\"https://www.youtube.com/embed/dQw4w9WgXcQ\" title=\"Video\" allowfullscreen></iframe>\n" });
+                                                    }} />
+                                                </div>
+                                            </div>
                                             <textarea
+                                                id="step-body"
                                                 className="flex-1 w-full p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 font-mono text-sm resize-none outline-none"
                                                 value={stepData.body}
                                                 onChange={(e) => setStepData({ ...stepData, body: e.target.value })}
                                                 placeholder="# Header\n\nWrite your content here..."
                                             />
-                                            <p className="text-xs text-gray-400 mt-2">Supports **bold**, *italics*, [links](url), and ![images](url)</p>
+                                            <p className="text-xs text-gray-400 mt-2">Use toolbar or type Markdown directly.</p>
                                         </div>
                                         <div className="flex flex-col">
                                             <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Preview</label>
                                             <div className="flex-1 w-full p-4 bg-gray-50 border border-gray-200 rounded-xl overflow-y-auto prose prose-sm max-w-none">
                                                 {/* Simple Previewer */}
                                                 {stepData.body ? (
-                                                    <div className="whitespace-pre-wrap">{stepData.body}</div>
+                                                    <ReactMarkdown
+                                                        rehypePlugins={[rehypeRaw]}
+                                                        components={{
+                                                            img: ({ node, ...props }) => (
+                                                                <img {...props} className="rounded-lg shadow-sm max-w-full h-auto mx-auto my-4 border border-gray-100" />
+                                                            ),
+                                                            iframe: ({ node, ...props }) => (
+                                                                <div className="aspect-video w-full my-4 rounded-lg overflow-hidden shadow-sm">
+                                                                    <iframe {...props} className="w-full h-full" loading="lazy" />
+                                                                </div>
+                                                            ),
+                                                            a: ({ node, ...props }) => (
+                                                                <a {...props} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 underline">
+                                                                    {props.children}
+                                                                </a>
+                                                            )
+                                                        }}
+                                                    >
+                                                        {stepData.body}
+                                                    </ReactMarkdown>
                                                 ) : <span className="text-gray-400 italic">Preview appears here...</span>}
                                             </div>
                                         </div>
