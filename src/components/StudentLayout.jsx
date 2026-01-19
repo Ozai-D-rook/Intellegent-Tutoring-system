@@ -3,7 +3,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, BookOpen, MessageSquare, LogOut, Trophy, User } from 'lucide-react';
 import AIChat from '../components/AIChat';
 import WelcomeVideoModal from '../components/WelcomeVideoModal';
-import PlacementTestModal from '../components/PlacementTestModal';
+// import PlacementTestModal from '../components/PlacementTestModal';
 import { supabase } from '../supabaseClient';
 import { useData } from '../context/DataContext';
 
@@ -92,7 +92,7 @@ const StudentLayout = () => {
             {/* Global Components */}
             <AIChat />
             <WelcomeVideoModal />
-            <PlacementTestModal />
+            {/* <PlacementTestModal /> */}
         </div>
     );
 };
