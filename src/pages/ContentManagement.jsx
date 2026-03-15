@@ -295,18 +295,38 @@ const ContentManagement = () => {
 const CourseBuilder = ({ course, steps, onClose, onSaveStep, onDeleteStep, isStepModalOpen, setIsStepModalOpen, activeStep, setActiveStep }) => {
     // Local state for the step form
     const [stepData, setStepData] = useState({ title: '', body: '', quiz_data: null });
+    const [activeTab, setActiveTab] = useState('content');
+    const [currentQuizIndex, setCurrentQuizIndex] = useState(0);
 
     useEffect(() => {
         if (activeStep) {
+            let quiz_data = activeStep.quiz_data;
+            
+            // Backward compatibility: If it's an object, wrap it in an array
+            if (quiz_data && !Array.isArray(quiz_data)) {
+                quiz_data = [quiz_data];
+            }
+
+            // Ensure all quizzes have 4 options
+            if (quiz_data && Array.isArray(quiz_data)) {
+                quiz_data = quiz_data.map(quiz => {
+                    let newOptions = quiz.options ? [...quiz.options] : [];
+                    while(newOptions.length < 4) newOptions.push('');
+                    return { ...quiz, options: newOptions };
+                });
+            }
+
             setStepData({
                 title: activeStep.title,
                 body: activeStep.body || '',
-                quiz_data: activeStep.quiz_data
+                quiz_data: quiz_data
             });
         } else {
             setStepData({ title: '', body: '', quiz_data: null });
         }
-    }, [activeStep]);
+        setActiveTab('content');
+        setCurrentQuizIndex(0);
+    }, [activeStep, isStepModalOpen]);
 
     const handleStepSubmit = (e) => {
         e.preventDefault();
@@ -410,143 +430,246 @@ const CourseBuilder = ({ course, steps, onClose, onSaveStep, onDeleteStep, isSte
                                         />
                                     </div>
 
-                                    {/* Content Editor */}
-                                    <div className="grid grid-cols-2 gap-8 h-[400px]">
-                                        <div className="flex flex-col">
-                                            <div className="flex justify-between items-end mb-2">
-                                                <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Markdown Content</label>
-                                                {/* Toolbar */}
-                                                <div className="flex bg-gray-100 rounded-lg p-1 space-x-1">
-                                                    <ToolbarBtn icon={<span className="font-bold font-serif">B</span>} label="Bold" onClick={() => {
-                                                        const ta = document.getElementById('step-body');
-                                                        const [start, end] = [ta.selectionStart, ta.selectionEnd];
-                                                        const text = stepData.body;
-                                                        const newText = text.substring(0, start) + "**" + text.substring(start, end) + "**" + text.substring(end);
-                                                        setStepData({ ...stepData, body: newText });
-                                                    }} />
-                                                    <ToolbarBtn icon={<span className="italic font-serif">I</span>} label="Italic" onClick={() => {
-                                                        const ta = document.getElementById('step-body');
-                                                        const [start, end] = [ta.selectionStart, ta.selectionEnd];
-                                                        const text = stepData.body;
-                                                        const newText = text.substring(0, start) + "*" + text.substring(start, end) + "*" + text.substring(end);
-                                                        setStepData({ ...stepData, body: newText });
-                                                    }} />
-                                                    <div className="w-px bg-gray-300 mx-1" />
-                                                    <ToolbarBtn icon={<FileText size={14} />} label="Link" onClick={() => {
-                                                        setStepData({ ...stepData, body: stepData.body + "[Link Text](https://example.com) " });
-                                                    }} />
-                                                    <ToolbarBtn icon={<ImageIcon size={14} />} label="Image" onClick={() => {
-                                                        setStepData({ ...stepData, body: stepData.body + "\n![Image Alt](https://placehold.co/600x400) \n" });
-                                                    }} />
-                                                    <ToolbarBtn icon={<Video size={14} />} label="Video" onClick={() => {
-                                                        setStepData({ ...stepData, body: stepData.body + "\n<iframe src=\"https://www.youtube.com/embed/dQw4w9WgXcQ\" title=\"Video\" allowfullscreen></iframe>\n" });
-                                                    }} />
-                                                </div>
-                                            </div>
-                                            <textarea
-                                                id="step-body"
-                                                className="flex-1 w-full p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 font-mono text-sm resize-none outline-none"
-                                                value={stepData.body}
-                                                onChange={(e) => setStepData({ ...stepData, body: e.target.value })}
-                                                placeholder="# Header\n\nWrite your content here..."
-                                            />
-                                            <p className="text-xs text-gray-400 mt-2">Use toolbar or type Markdown directly.</p>
-                                        </div>
-                                        <div className="flex flex-col">
-                                            <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Preview</label>
-                                            <div className="flex-1 w-full p-4 bg-gray-50 border border-gray-200 rounded-xl overflow-y-auto prose prose-sm max-w-none">
-                                                {/* Simple Previewer */}
-                                                {stepData.body ? (
-                                                    <ReactMarkdown
-                                                        rehypePlugins={[rehypeRaw]}
-                                                        components={{
-                                                            img: ({ node, ...props }) => (
-                                                                <img {...props} className="rounded-lg shadow-sm max-w-full h-auto mx-auto my-4 border border-gray-100" />
-                                                            ),
-                                                            iframe: ({ node, ...props }) => (
-                                                                <div className="aspect-video w-full my-4 rounded-lg overflow-hidden shadow-sm">
-                                                                    <iframe {...props} className="w-full h-full" loading="lazy" />
-                                                                </div>
-                                                            ),
-                                                            a: ({ node, ...props }) => (
-                                                                <a {...props} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 underline">
-                                                                    {props.children}
-                                                                </a>
-                                                            )
-                                                        }}
-                                                    >
-                                                        {stepData.body}
-                                                    </ReactMarkdown>
-                                                ) : <span className="text-gray-400 italic">Preview appears here...</span>}
-                                            </div>
-                                        </div>
+                                    {/* Tabs */}
+                                    <div className="flex border-b border-gray-200 mt-2 mb-4">
+                                        <button
+                                            type="button"
+                                            className={`py-2 px-6 border-b-2 font-bold text-sm transition-colors ${activeTab === 'content' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
+                                            onClick={() => setActiveTab('content')}
+                                        >
+                                            Content Material
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className={`py-2 px-6 border-b-2 font-bold text-sm transition-colors ${activeTab === 'quiz' ? 'border-blue-500 text-blue-600' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'}`}
+                                            onClick={() => setActiveTab('quiz')}
+                                        >
+                                            Quiz Settings
+                                        </button>
                                     </div>
 
-                                    {/* Quiz Section (Simplified) */}
-                                    <div className="border-t border-gray-100 pt-6">
-                                        <div className="flex items-center justify-between mb-4">
-                                            <label className="block text-sm font-bold text-gray-700">Quiz (Optional)</label>
-                                            {!stepData.quiz_data && (
-                                                <button
-                                                    type="button"
-                                                    onClick={() => setStepData({ ...stepData, quiz_data: { question: '', options: ['', ''], answer: 0 } })}
-                                                    className="text-sm text-blue-600 font-bold hover:underline"
-                                                >
-                                                    + Add Quiz
-                                                </button>
-                                            )}
-                                        </div>
-
-                                        {stepData.quiz_data && (
-                                            <div className="bg-purple-50 p-6 rounded-xl border border-purple-100">
-                                                <div className="flex justify-between mb-4">
-                                                    <h4 className="font-bold text-purple-900">Quiz Settings</h4>
-                                                    <button type="button" onClick={() => setStepData({ ...stepData, quiz_data: null })} className="text-red-500 text-xs font-bold uppercase">Remove</button>
-                                                </div>
-
-                                                <div className="space-y-4">
-                                                    <input
-                                                        type="text"
-                                                        placeholder="Question: What is 2 + 2?"
-                                                        className="w-full px-4 py-2 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none"
-                                                        value={stepData.quiz_data.question}
-                                                        onChange={(e) => setStepData({
-                                                            ...stepData,
-                                                            quiz_data: { ...stepData.quiz_data, question: e.target.value }
-                                                        })}
-                                                    />
-
-                                                    {/* Options */}
-                                                    <div className="space-y-2">
-                                                        {stepData.quiz_data.options.map((opt, idx) => (
-                                                            <div key={idx} className="flex items-center space-x-2">
-                                                                <input
-                                                                    type="radio"
-                                                                    name="correct"
-                                                                    checked={stepData.quiz_data.answer === idx}
-                                                                    onChange={() => setStepData({
-                                                                        ...stepData,
-                                                                        quiz_data: { ...stepData.quiz_data, answer: idx }
-                                                                    })}
-                                                                />
-                                                                <input
-                                                                    type="text"
-                                                                    placeholder={`Option ${idx + 1}`}
-                                                                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm"
-                                                                    value={opt}
-                                                                    onChange={(e) => {
-                                                                        const newOpts = [...stepData.quiz_data.options];
-                                                                        newOpts[idx] = e.target.value;
-                                                                        setStepData({ ...stepData, quiz_data: { ...stepData.quiz_data, options: newOpts } });
-                                                                    }}
-                                                                />
-                                                            </div>
-                                                        ))}
+                                    {activeTab === 'content' && (
+                                        <div className="grid grid-cols-2 gap-8 h-[400px]">
+                                            <div className="flex flex-col">
+                                                <div className="flex justify-between items-end mb-2">
+                                                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wider">Markdown Content</label>
+                                                    {/* Toolbar */}
+                                                    <div className="flex bg-gray-100 rounded-lg p-1 space-x-1">
+                                                        <ToolbarBtn icon={<span className="font-bold font-serif">B</span>} label="Bold" onClick={() => {
+                                                            const ta = document.getElementById('step-body');
+                                                            const [start, end] = [ta.selectionStart, ta.selectionEnd];
+                                                            const text = stepData.body;
+                                                            const newText = text.substring(0, start) + "**" + text.substring(start, end) + "**" + text.substring(end);
+                                                            setStepData({ ...stepData, body: newText });
+                                                        }} />
+                                                        <ToolbarBtn icon={<span className="italic font-serif">I</span>} label="Italic" onClick={() => {
+                                                            const ta = document.getElementById('step-body');
+                                                            const [start, end] = [ta.selectionStart, ta.selectionEnd];
+                                                            const text = stepData.body;
+                                                            const newText = text.substring(0, start) + "*" + text.substring(start, end) + "*" + text.substring(end);
+                                                            setStepData({ ...stepData, body: newText });
+                                                        }} />
+                                                        <div className="w-px bg-gray-300 mx-1" />
+                                                        <ToolbarBtn icon={<FileText size={14} />} label="Link" onClick={() => {
+                                                            setStepData({ ...stepData, body: stepData.body + "[Link Text](https://example.com) " });
+                                                        }} />
+                                                        <ToolbarBtn icon={<ImageIcon size={14} />} label="Image" onClick={() => {
+                                                            setStepData({ ...stepData, body: stepData.body + "\n![Image Alt](https://placehold.co/600x400) \n" });
+                                                        }} />
+                                                        <ToolbarBtn icon={<Video size={14} />} label="Video" onClick={() => {
+                                                            setStepData({ ...stepData, body: stepData.body + "\n<iframe src=\"https://www.youtube.com/embed/dQw4w9WgXcQ\" title=\"Video\" allowfullscreen></iframe>\n" });
+                                                        }} />
                                                     </div>
                                                 </div>
+                                                <textarea
+                                                    id="step-body"
+                                                    className="flex-1 w-full p-4 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 font-mono text-sm resize-none outline-none"
+                                                    value={stepData.body}
+                                                    onChange={(e) => setStepData({ ...stepData, body: e.target.value })}
+                                                    placeholder="# Header\n\nWrite your content here..."
+                                                />
+                                                <p className="text-xs text-gray-400 mt-2">Use toolbar or type Markdown directly.</p>
                                             </div>
-                                        )}
-                                    </div>
+                                            <div className="flex flex-col">
+                                                <label className="block text-xs font-bold text-gray-500 uppercase tracking-wider mb-2">Preview</label>
+                                                <div className="flex-1 w-full p-4 bg-gray-50 border border-gray-200 rounded-xl overflow-y-auto prose prose-sm max-w-none">
+                                                    {/* Simple Previewer */}
+                                                    {stepData.body ? (
+                                                        <ReactMarkdown
+                                                            rehypePlugins={[rehypeRaw]}
+                                                            components={{
+                                                                img: ({ node, ...props }) => (
+                                                                    <img {...props} className="rounded-lg shadow-sm max-w-full h-auto mx-auto my-4 border border-gray-100" />
+                                                                ),
+                                                                iframe: ({ node, ...props }) => (
+                                                                    <div className="aspect-video w-full my-4 rounded-lg overflow-hidden shadow-sm">
+                                                                        <iframe {...props} className="w-full h-full" loading="lazy" />
+                                                                    </div>
+                                                                ),
+                                                                a: ({ node, ...props }) => (
+                                                                    <a {...props} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 underline">
+                                                                        {props.children}
+                                                                    </a>
+                                                                )
+                                                            }}
+                                                        >
+                                                            {stepData.body}
+                                                        </ReactMarkdown>
+                                                    ) : <span className="text-gray-400 italic">Preview appears here...</span>}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {activeTab === 'quiz' && (
+                                        <div className="flex-1 flex flex-col pt-2 min-h-[400px]">
+                                            {(!stepData.quiz_data || stepData.quiz_data.length === 0) ? (
+                                                <div className="text-center p-12 bg-gray-50 rounded-xl border border-dashed border-gray-300 my-auto">
+                                                    <HelpCircle className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                                                    <h3 className="text-lg font-bold text-gray-700 mb-2">No Quizzes Attached</h3>
+                                                    <p className="text-gray-500 mb-6 text-sm">Add multiple choice questions to test understanding of this step's material.</p>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setStepData({ ...stepData, quiz_data: [{ question: '', options: ['', '', '', ''], answer: 0 }] });
+                                                            setCurrentQuizIndex(0);
+                                                        }}
+                                                        className="px-6 py-3 bg-purple-600 text-white font-bold rounded-xl hover:bg-purple-700 transition-colors shadow-sm"
+                                                    >
+                                                        Create Quiz
+                                                    </button>
+                                                </div>
+                                            ) : (
+                                                <div className="bg-purple-50 p-6 rounded-xl border border-purple-100 h-full flex flex-col">
+                                                    <div className="flex justify-between items-center mb-6">
+                                                        <h4 className="text-lg font-bold text-purple-900">Quiz Settings ({currentQuizIndex + 1} of {stepData.quiz_data.length})</h4>
+                                                        <div className="flex items-center space-x-3">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    const newQuizzes = [...stepData.quiz_data];
+                                                                    newQuizzes.push({ question: '', options: ['', '', '', ''], answer: 0 });
+                                                                    setStepData({ ...stepData, quiz_data: newQuizzes });
+                                                                    setCurrentQuizIndex(newQuizzes.length - 1);
+                                                                }}
+                                                                className="text-purple-600 text-sm font-bold hover:underline bg-purple-100 px-3 py-1 rounded-md"
+                                                            >
+                                                                + Add Question
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    const newQuizzes = stepData.quiz_data.filter((_, idx) => idx !== currentQuizIndex);
+                                                                    setStepData({ ...stepData, quiz_data: newQuizzes.length > 0 ? newQuizzes : null });
+                                                                    setCurrentQuizIndex(Math.max(0, currentQuizIndex - 1));
+                                                                }}
+                                                                className="text-red-500 text-sm font-bold uppercase hover:underline"
+                                                            >
+                                                                Remove Question
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex-1 space-y-6">
+                                                        {stepData.quiz_data[currentQuizIndex] && (
+                                                            <>
+                                                                <div>
+                                                                    <label className="block text-sm font-bold text-purple-900 mb-2">Question</label>
+                                                                    <input
+                                                                        type="text"
+                                                                        placeholder="e.g., What is the capital of France?"
+                                                                        className="w-full px-4 py-3 border border-purple-200 rounded-xl focus:ring-2 focus:ring-purple-500 outline-none placeholder-purple-300 text-purple-900"
+                                                                        value={stepData.quiz_data[currentQuizIndex].question}
+                                                                        onChange={(e) => {
+                                                                            const newQuizzes = [...stepData.quiz_data];
+                                                                            newQuizzes[currentQuizIndex] = { ...newQuizzes[currentQuizIndex], question: e.target.value };
+                                                                            setStepData({ ...stepData, quiz_data: newQuizzes });
+                                                                        }}
+                                                                    />
+                                                                </div>
+
+                                                                {/* Options */}
+                                                                <div>
+                                                                    <div className="flex items-center justify-between mb-2">
+                                                                        <label className="block text-sm font-bold text-purple-900">Options (Select the correct answer)</label>
+                                                                    </div>
+                                                                    <div className="space-y-3">
+                                                                        {['A', 'B', 'C', 'D'].map((label, idx) => (
+                                                                            <div key={idx} className="flex items-center space-x-3">
+                                                                                <div className="flex items-center justify-center w-10 h-10 rounded-full bg-purple-100 text-purple-700 font-bold text-lg shadow-sm shrink-0">
+                                                                                    {label}
+                                                                                </div>
+                                                                                <div className={`flex-1 flex items-center bg-white border-2 rounded-xl overflow-hidden focus-within:ring-2 focus-within:ring-purple-500 transition-colors ${stepData.quiz_data[currentQuizIndex].answer === idx ? 'border-purple-500' : 'border-transparent'}`}>
+                                                                                    <label className="flex items-center justify-center pl-4 pr-3 cursor-pointer bg-gray-50 h-full border-r border-gray-100">
+                                                                                        <input
+                                                                                            type="radio"
+                                                                                            name="correct"
+                                                                                            className="w-4 h-4 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                                                                                            checked={stepData.quiz_data[currentQuizIndex].answer === idx}
+                                                                                            onChange={() => {
+                                                                                                const newQuizzes = [...stepData.quiz_data];
+                                                                                                newQuizzes[currentQuizIndex] = { ...newQuizzes[currentQuizIndex], answer: idx };
+                                                                                                setStepData({ ...stepData, quiz_data: newQuizzes });
+                                                                                            }}
+                                                                                        />
+                                                                                    </label>
+                                                                                    <input
+                                                                                        type="text"
+                                                                                        placeholder={`Option ${label}`}
+                                                                                        className="flex-1 px-4 py-3 text-sm outline-none border-none bg-transparent"
+                                                                                        value={(stepData.quiz_data[currentQuizIndex].options && stepData.quiz_data[currentQuizIndex].options[idx]) || ''}
+                                                                                        onChange={(e) => {
+                                                                                            const newQuizzes = [...stepData.quiz_data];
+                                                                                            const newOpts = [...(newQuizzes[currentQuizIndex].options || ['', '', '', ''])];
+                                                                                            newOpts[idx] = e.target.value;
+                                                                                            newQuizzes[currentQuizIndex] = { ...newQuizzes[currentQuizIndex], options: newOpts };
+                                                                                            setStepData({ ...stepData, quiz_data: newQuizzes });
+                                                                                        }}
+                                                                                    />
+                                                                                </div>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            </>
+                                                        )}
+                                                    </div>
+                                                    
+                                                    {/* Navigation between quizzes */}
+                                                    {stepData.quiz_data.length > 1 && (
+                                                        <div className="flex justify-between items-center mt-6 pt-6 border-t border-purple-200">
+                                                            <button
+                                                                type="button"
+                                                                disabled={currentQuizIndex === 0}
+                                                                onClick={() => setCurrentQuizIndex(currentQuizIndex - 1)}
+                                                                className="px-4 py-2 text-purple-700 font-bold bg-purple-100 hover:bg-purple-200 rounded-lg disabled:opacity-50 transition-colors"
+                                                            >
+                                                                Previous
+                                                            </button>
+                                                            <div className="flex space-x-2">
+                                                                {stepData.quiz_data.map((_, idx) => (
+                                                                    <button
+                                                                        key={idx}
+                                                                        type="button"
+                                                                        onClick={() => setCurrentQuizIndex(idx)}
+                                                                        className={`w-3 h-3 rounded-full ${idx === currentQuizIndex ? 'bg-purple-600' : 'bg-purple-300'}`}
+                                                                    />
+                                                                ))}
+                                                            </div>
+                                                            <button
+                                                                type="button"
+                                                                disabled={currentQuizIndex === stepData.quiz_data.length - 1}
+                                                                onClick={() => setCurrentQuizIndex(currentQuizIndex + 1)}
+                                                                className="px-4 py-2 text-purple-700 font-bold bg-purple-100 hover:bg-purple-200 rounded-lg disabled:opacity-50 transition-colors"
+                                                            >
+                                                                Next
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
 
                                 <div className="p-6 border-t border-gray-100 bg-gray-50 flex justify-end space-x-3">

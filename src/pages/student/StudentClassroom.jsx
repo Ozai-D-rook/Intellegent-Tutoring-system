@@ -72,79 +72,284 @@ const StudentClassroom = () => {
         setIsQuizOpen(false);
     };
 
-    // Quiz Component
-    const QuizModal = ({ quiz, onPass, onClose }) => {
-        const [selectedOption, setSelectedOption] = useState(null);
-        const [showResult, setShowResult] = useState(false);
-        const [isCorrect, setIsCorrect] = useState(false);
+    // Utility to shuffle an array and track the new index of a specific item
+    const shuffleQuizOptions = (quiz) => {
+        const optionsWithIndex = quiz.options.map((opt, i) => ({ text: opt, originalIndex: i }));
+        // Fisher-Yates shuffle
+        for (let i = optionsWithIndex.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [optionsWithIndex[i], optionsWithIndex[j]] = [optionsWithIndex[j], optionsWithIndex[i]];
+        }
+        
+        const newAnswerIndex = optionsWithIndex.findIndex(o => o.originalIndex === quiz.answer);
+        return {
+            ...quiz,
+            options: optionsWithIndex.map(o => o.text),
+            answer: newAnswerIndex,
+            originalAnswer: quiz.answer // keep for reference if needed
+        };
+    };
 
-        const handleSubmit = () => {
-            const correct = selectedOption === quiz.answer;
-            setIsCorrect(correct);
-            setShowResult(true);
-            if (correct) {
-                setTimeout(() => {
-                    onPass();
-                }, 1500);
+    // Quiz Component
+    const QuizModal = ({ quizzes, onPass, onClose }) => {
+        const [activeQuizzes, setActiveQuizzes] = useState([]);
+        const [currentQuizIndex, setCurrentQuizIndex] = useState(0);
+        const [answers, setAnswers] = useState({}); // Track selected option per quiz index
+        const [retryCount, setRetryCount] = useState(0);
+        const [quizState, setQuizState] = useState('answering'); // 'answering' | 'results' | 'retry_prompt'
+        const [score, setScore] = useState(0);
+
+        // Initialize and shuffle on mount or retry
+        useEffect(() => {
+            const quizArray = Array.isArray(quizzes) ? quizzes : [quizzes];
+            setActiveQuizzes(quizArray.map(q => shuffleQuizOptions(q)));
+        }, [quizzes, retryCount]);
+
+        if (activeQuizzes.length === 0) return null;
+
+        const quiz = activeQuizzes[currentQuizIndex];
+
+        const handleOptionSelect = (optionIdx) => {
+            if (quizState !== 'answering') return;
+            setAnswers(prev => ({ ...prev, [currentQuizIndex]: optionIdx }));
+        };
+
+        const handleSubmitQuiz = () => {
+            // Calculate score
+            let currentScore = 0;
+            activeQuizzes.forEach((q, idx) => {
+                if (answers[idx] === q.answer) {
+                    currentScore++;
+                }
+            });
+
+            setScore(currentScore);
+
+            const passThreshold = 0.7; // 70% to pass
+            const passed = (currentScore / activeQuizzes.length) >= passThreshold;
+
+            if (passed) {
+                // Passed!
+                setQuizState('results');
+                // Give them a moment to view the review screen before auto-closing, or let them close it manually.
+                // We'll let them close it manually now since there is a review to read.
+            } else {
+                // Failed
+                const newRetryCount = retryCount + 1;
+                setRetryCount(newRetryCount);
+                if (newRetryCount >= 3) {
+                    setQuizState('results');
+                    // On 3rd fail, they pass anyway. Let them review and close manually to proceed.
+                } else {
+                    setQuizState('retry_prompt');
+                }
             }
         };
+
+        const handleRetry = () => {
+            setAnswers({});
+            setCurrentQuizIndex(0);
+            setQuizState('answering');
+            // incrementing retryCount in handleSubmitQuiz already triggered a reshuffle via useEffect,
+            // but for 'retry_prompt' we only set state. We should force a reshuffle when they explicitly click retry.
+            // Wait, we incremented retryCount on fail, which already shuffled in the background. That's fine.
+        };
+
+        const handleContinue = () => {
+             onPass();
+        };
+
+        const renderReviewList = () => (
+            <div className="mt-8 text-left border-t border-gray-100 pt-6 max-h-48 overflow-y-auto custom-scrollbar">
+                <h4 className="font-bold text-gray-900 mb-4">Review your answers:</h4>
+                <div className="space-y-4">
+                    {activeQuizzes.map((q, idx) => {
+                        const isCorrect = answers[idx] === q.answer;
+                        return (
+                            <div key={idx} className={`p-4 rounded-xl border ${isCorrect ? 'bg-green-50 border-green-100' : 'bg-red-50 border-red-100'}`}>
+                                <div className="flex items-start space-x-3">
+                                    <div className="mt-0.5 shrink-0">
+                                        {isCorrect ? <CheckCircle className="w-5 h-5 text-green-600" /> : <AlertCircle className="w-5 h-5 text-red-600" />}
+                                    </div>
+                                    <div>
+                                        <p className="font-medium text-gray-900 text-sm mb-1">{idx + 1}. {q.question}</p>
+                                        <p className="text-xs text-gray-600">
+                                            Your answer: <span className="font-semibold">{q.options[answers[idx]] || 'None'}</span>
+                                        </p>
+                                        {!isCorrect && (
+                                            <p className="text-xs text-green-700 mt-1">
+                                                Correct answer: <span className="font-semibold">{q.options[q.answer]}</span>
+                                            </p>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+        );
+
+        // UI rendering based on state
+        if (quizState === 'results') {
+            const passThreshold = 0.7;
+            const isSuccess = (score / activeQuizzes.length) >= passThreshold;
+            
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+                    <motion.div
+                        initial={{ scale: 0.9, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        className="bg-white rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl p-8 text-center flex flex-col max-h-[90vh]"
+                    >
+                        {isSuccess ? (
+                            <>
+                                <div className="w-20 h-20 mx-auto bg-green-100 rounded-full flex items-center justify-center mb-6 shrink-0">
+                                    <CheckCircle className="w-10 h-10 text-green-600" />
+                                </div>
+                                <h3 className="text-3xl font-bold text-gray-900 mb-2">Great Job!</h3>
+                                <p className="text-gray-600 text-lg">You scored {Math.round((score / activeQuizzes.length) * 100)}% and passed!</p>
+                            </>
+                        ) : (
+                            <>
+                                <div className="w-20 h-20 mx-auto bg-blue-100 rounded-full flex items-center justify-center mb-6 shrink-0">
+                                    <CheckCircle className="w-10 h-10 text-blue-600" />
+                                </div>
+                                <h3 className="text-3xl font-bold text-gray-900 mb-2">Good Effort</h3>
+                                <p className="text-gray-600 text-lg">You've attempted this {retryCount} times.</p>
+                                <p className="text-gray-500 mt-2">Let's continue to the next part of the course for now.</p>
+                            </>
+                        )}
+                        
+                        {renderReviewList()}
+
+                        <div className="mt-8 pt-6 border-t border-gray-100">
+                             <button onClick={handleContinue} className="w-full py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold transition-colors">
+                                Continue Course
+                            </button>
+                        </div>
+                    </motion.div>
+                </div>
+            );
+        }
+
+        if (quizState === 'retry_prompt') {
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+                    <motion.div
+                        initial={{ scale: 0.9, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        className="bg-white rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl p-8 text-center flex flex-col max-h-[90vh]"
+                    >
+                        <div className="w-20 h-20 mx-auto bg-red-100 rounded-full flex items-center justify-center mb-6 shrink-0">
+                            <AlertCircle className="w-10 h-10 text-red-600" />
+                        </div>
+                        <h3 className="text-3xl font-bold text-gray-900 mb-2">Not quite right</h3>
+                        <p className="text-gray-600 text-lg">You scored {Math.round((score / activeQuizzes.length) * 100)}% ({score} out of {activeQuizzes.length}).</p>
+                        <p className="text-gray-500 mt-2">You need 70% to pass.</p>
+                        
+                        {renderReviewList()}
+
+                        <div className="flex justify-center space-x-4 mt-8 pt-6 border-t border-gray-100">
+                            <button onClick={onClose} className="px-6 py-3 text-gray-500 hover:bg-gray-100 font-bold rounded-xl transition-colors">
+                                Cancel
+                            </button>
+                            <button onClick={handleRetry} className="px-8 py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold shadow-lg shadow-purple-200 transition-colors">
+                                Retry Quiz
+                            </button>
+                        </div>
+                    </motion.div>
+                </div>
+            );
+        }
+
+        const isLastQuestion = currentQuizIndex === activeQuizzes.length - 1;
+        const selectedOption = answers[currentQuizIndex];
 
         return (
             <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
                 <motion.div
                     initial={{ scale: 0.9, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
-                    className="bg-white rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl"
+                    className="bg-white rounded-2xl max-w-lg w-full overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
                 >
-                    <div className="p-8">
-                        <div className="flex items-center space-x-3 mb-6">
+                    <div className="p-8 pb-4 border-b border-gray-100">
+                        <div className="flex items-center space-x-3 mb-4">
                             <div className="p-3 bg-purple-100 rounded-full text-purple-600">
                                 <HelpCircle className="w-6 h-6" />
                             </div>
-                            <h3 className="text-2xl font-bold text-gray-900">Quiz Time!</h3>
+                            <div>
+                                <h3 className="text-2xl font-bold text-gray-900">Quiz Time!</h3>
+                                {activeQuizzes.length > 1 && (
+                                    <p className="text-sm font-semibold text-purple-600">Question {currentQuizIndex + 1} of {activeQuizzes.length}</p>
+                                )}
+                            </div>
                         </div>
-
+                        {activeQuizzes.length > 1 && (
+                            <div className="w-full bg-gray-100 rounded-full h-1.5 mb-2">
+                                <div className="bg-purple-500 h-1.5 rounded-full transition-all duration-300" style={{ width: `${((currentQuizIndex + 1) / activeQuizzes.length) * 100}%` }} />
+                            </div>
+                        )}
+                    </div>
+                    
+                    <div className="p-8 flex-1 overflow-y-auto custom-scrollbar">
                         <p className="text-xl font-medium text-gray-800 mb-6">{quiz.question}</p>
 
                         <div className="space-y-3">
-                            {quiz.options.map((option, idx) => (
+                            {quiz.options.map((option, idx) => {
+                                const labels = ['A', 'B', 'C', 'D'];
+                                const label = labels[idx] || (idx + 1);
+                                return (
                                 <button
                                     key={idx}
-                                    onClick={() => { setSelectedOption(idx); setShowResult(false); }}
-                                    disabled={showResult && isCorrect}
-                                    className={`w-full p-4 rounded-xl text-left border-2 transition-all flex justify-between items-center ${selectedOption === idx
+                                    onClick={() => handleOptionSelect(idx)}
+                                    className={`w-full p-4 rounded-xl text-left border-2 transition-all flex items-center space-x-4 ${selectedOption === idx
                                         ? 'border-purple-600 bg-purple-50 text-purple-900'
                                         : 'border-gray-100 hover:border-gray-200 hover:bg-gray-50'
-                                        } ${showResult && idx === quiz.answer ? '!border-green-500 !bg-green-50 !text-green-900' : ''}
-                                       ${showResult && selectedOption === idx && !isCorrect ? '!border-red-500 !bg-red-50 !text-red-900' : ''}
-                                     `}
+                                        }`}
                                 >
-                                    <span className="font-medium">{option}</span>
-                                    {showResult && idx === quiz.answer && <CheckCircle className="w-5 h-5 text-green-600" />}
-                                    {showResult && selectedOption === idx && !isCorrect && <AlertCircle className="w-5 h-5 text-red-600" />}
+                                    <div className={`flex items-center justify-center w-8 h-8 rounded-full font-bold text-sm shrink-0 transition-colors ${
+                                        selectedOption === idx ? 'bg-purple-200 text-purple-800' : 'bg-gray-200 text-gray-600'
+                                    }`}>
+                                        {label}
+                                    </div>
+                                    <div className="flex-1 font-medium">{option}</div>
                                 </button>
-                            ))}
+                            )})}
                         </div>
+                    </div>
 
-                        {showResult && (
-                            <motion.div
-                                initial={{ opacity: 0, y: 10 }}
-                                animate={{ opacity: 1, y: 0 }}
-                                className={`mt-6 p-4 rounded-xl text-center font-bold ${isCorrect ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}
-                            >
-                                {isCorrect ? "Correct! Moving to next step..." : "Incorrect. Try again!"}
-                            </motion.div>
-                        )}
-
-                        <div className="mt-8 flex justify-end space-x-3">
+                    <div className="p-6 border-t border-gray-100 bg-gray-50 flex justify-between items-center">
+                        <div>
+                            {activeQuizzes.length > 1 && (
+                                <button
+                                    onClick={() => setCurrentQuizIndex(prev => prev - 1)}
+                                    disabled={currentQuizIndex === 0}
+                                    className="px-4 py-2 text-gray-500 hover:text-gray-900 font-bold disabled:opacity-30 transition-colors bg-transparent border border-gray-200 rounded-lg hover:bg-gray-100"
+                                >
+                                    Previous
+                                </button>
+                            )}
+                        </div>
+                        <div className="flex space-x-3">
                             <button onClick={onClose} className="px-6 py-2 text-gray-500 hover:text-gray-700 font-bold">Cancel</button>
-                            <button
-                                onClick={handleSubmit}
-                                disabled={selectedOption === null || (showResult && isCorrect)}
-                                className="px-8 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg shadow-purple-200"
-                            >
-                                Submit Answer
-                            </button>
+                            {isLastQuestion ? (
+                                <button
+                                    onClick={handleSubmitQuiz}
+                                    disabled={Object.keys(answers).length < activeQuizzes.length}
+                                    className="px-8 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg shadow-purple-200"
+                                >
+                                    Submit
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={() => setCurrentQuizIndex(prev => prev + 1)}
+                                    disabled={answers[currentQuizIndex] === undefined}
+                                    className="px-8 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed transition-colors shadow-lg shadow-purple-200"
+                                >
+                                    Next
+                                </button>
+                            )}
                         </div>
                     </div>
                 </motion.div>
@@ -358,7 +563,7 @@ const StudentClassroom = () => {
             <AnimatePresence>
                 {isQuizOpen && currentStep?.quiz_data && (
                     <QuizModal
-                        quiz={currentStep.quiz_data}
+                        quizzes={currentStep.quiz_data}
                         onPass={markStepComplete}
                         onClose={() => setIsQuizOpen(false)}
                     />
