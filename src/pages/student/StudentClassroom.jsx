@@ -9,7 +9,7 @@ import rehypeRaw from 'rehype-raw';
 
 const StudentClassroom = () => {
     const { courseId } = useParams();
-    const { content, fetchCourseSteps, currentUser, getStudentProgress, markStepProgress, progressRecords } = useData();
+    const { content, fetchCourseSteps } = useData();
     const { updateContext } = useAI();
     const navigate = useNavigate();
 
@@ -18,21 +18,6 @@ const StudentClassroom = () => {
     const [completedSteps, setCompletedSteps] = useState([0]); // Track completed step indices. Default 1st step unlocked.
     const [isQuizOpen, setIsQuizOpen] = useState(false);
     const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Mobile sidebar state
-
-    useEffect(() => {
-        if (currentUser && currentCourse && progressRecords) {
-            const prog = getStudentProgress(currentUser.id);
-            const myCompleted = prog.completedStepIndices ? prog.completedStepIndices(currentCourse.id) : [];
-            const maxCompleted = Math.max(-1, ...myCompleted);
-            
-            const unlocked = new Set(myCompleted);
-            for (let i = 0; i <= maxCompleted + 1; i++) {
-                unlocked.add(i);
-            }
-            unlocked.add(0); // always unlock first step
-            setCompletedSteps(Array.from(unlocked));
-        }
-    }, [currentUser?.id, currentCourse?.id, progressRecords]);
 
     // Derived state for current step
     const currentStep = steps.length > 0 && steps[currentStepIndex] ? steps[currentStepIndex] : null;
@@ -63,23 +48,27 @@ const StudentClassroom = () => {
         return <div className="p-8 text-center">Course not found</div>;
     }
 
-    const hasQuiz = Boolean(currentStep?.quiz_data);
-    const isCompleted = completedSteps.includes(currentStepIndex + 1);
-
-    const handleNextButton = async () => {
-        if (!hasQuiz && !isCompleted) {
-            await markStepProgress(currentCourse.id, currentStepIndex, false);
-        }
-        
-        if (currentStepIndex < steps.length - 1) {
-            setCurrentStepIndex(currentStepIndex + 1);
+    const handleNext = () => {
+        // If has quiz, must pass quiz first (handled in quiz component)
+        // If no quiz, simple complete
+        if (!currentStep.quiz_data) {
+            markStepComplete();
         } else {
-            alert("Congratulations! You've completed the course.");
+            setIsQuizOpen(true);
         }
     };
 
-    const handleQuizComplete = async (passed) => {
-        await markStepProgress(currentCourse.id, currentStepIndex, passed);
+    const markStepComplete = () => {
+        if (!completedSteps.includes(currentStepIndex + 1)) {
+            setCompletedSteps([...completedSteps, currentStepIndex + 1]);
+        }
+
+        if (currentStepIndex < steps.length - 1) {
+            setCurrentStepIndex(currentStepIndex + 1);
+        } else {
+            // Course Complete!
+            alert("Congratulations! You've completed the course.");
+        }
         setIsQuizOpen(false);
     };
 
@@ -102,7 +91,7 @@ const StudentClassroom = () => {
     };
 
     // Quiz Component
-    const QuizModal = ({ quizzes, onComplete, onClose }) => {
+    const QuizModal = ({ quizzes, onPass, onClose }) => {
         const [activeQuizzes, setActiveQuizzes] = useState([]);
         const [currentQuizIndex, setCurrentQuizIndex] = useState(0);
         const [answers, setAnswers] = useState({}); // Track selected option per quiz index
@@ -167,9 +156,7 @@ const StudentClassroom = () => {
         };
 
         const handleContinue = () => {
-            const passThreshold = 0.7;
-            const isSuccess = (score / activeQuizzes.length) >= passThreshold;
-            onComplete(isSuccess);
+             onPass();
         };
 
         const renderReviewList = () => (
@@ -552,24 +539,13 @@ const StudentClassroom = () => {
                                 Previous
                             </button>
 
-                            <div className="flex space-x-3">
-                                {hasQuiz && (
-                                     <button
-                                         onClick={() => setIsQuizOpen(true)}
-                                         className="px-6 md:px-8 py-2 md:py-3 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold shadow-lg shadow-purple-200 transition-all transform active:scale-95 text-sm md:text-base"
-                                     >
-                                         {isCompleted ? 'Review Quiz' : 'Take Quiz'}
-                                     </button>
-                                )}
-                                <button
-                                    onClick={handleNextButton}
-                                    disabled={hasQuiz && !isCompleted}
-                                    className="px-6 md:px-8 py-2 md:py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-200 flex items-center space-x-2 transition-all transform active:scale-95 text-sm md:text-base disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    <span>Next Step</span>
-                                    <ChevronRight className="w-4 h-4 md:w-5 md:h-5" />
-                                </button>
-                            </div>
+                            <button
+                                onClick={handleNext}
+                                className="px-6 md:px-8 py-2 md:py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold shadow-lg shadow-blue-200 flex items-center space-x-2 transition-all transform active:scale-95 text-sm md:text-base"
+                            >
+                                <span>{currentStep.quiz_data ? 'Take Quiz' : 'Complete'}</span>
+                                <ChevronRight className="w-4 h-4 md:w-5 md:h-5" />
+                            </button>
                         </div>
                     </>
                 ) : (
@@ -588,7 +564,7 @@ const StudentClassroom = () => {
                 {isQuizOpen && currentStep?.quiz_data && (
                     <QuizModal
                         quizzes={currentStep.quiz_data}
-                        onComplete={handleQuizComplete}
+                        onPass={markStepComplete}
                         onClose={() => setIsQuizOpen(false)}
                     />
                 )}

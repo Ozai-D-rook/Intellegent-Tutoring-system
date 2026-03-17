@@ -2,6 +2,17 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { initialContent, initialAnalytics } from '../data/mockData';
 import { supabase } from '../supabaseClient';
 
+const initialProgress = {
+    1: {
+        completed: [1],
+        inProgress: [2],
+        courses: [
+            { id: 101, title: "Introduction to AI", progress: 75, totalLessons: 4, completedLessons: 3 },
+            { id: 102, title: "Python for Beginners", progress: 30, totalLessons: 10, completedLessons: 3 }
+        ]
+    }
+};
+
 const DataContext = createContext();
 
 export const useData = () => useContext(DataContext);
@@ -16,8 +27,8 @@ export const DataProvider = ({ children }) => {
     const [currentUser, setCurrentUser] = useState(null);
     const [loading, setLoading] = useState(true);
 
-    const [progressRecords, setProgressRecords] = useState([]);
-    const [analytics, setAnalytics] = useState(initialAnalytics); // Fallback for some default shapes
+    const [studentProgress, setStudentProgress] = useState(initialProgress);
+    const [analytics, setAnalytics] = useState(initialAnalytics);
 
     // Sync Auth Session
     useEffect(() => {
@@ -56,32 +67,6 @@ export const DataProvider = ({ children }) => {
 
         return () => subscription.unsubscribe();
     }, []);
-
-    // Fetch and subscribe to student_progress
-    useEffect(() => {
-        const fetchProgress = async () => {
-            if (!session) return;
-            const { data, error } = await supabase
-                .from('student_progress')
-                .select('*');
-            if (error) {
-                console.error("Error fetching progress:", error);
-            } else {
-                setProgressRecords(data || []);
-            }
-        };
-
-        fetchProgress();
-        
-        const channel = supabase
-            .channel('public:student_progress')
-            .on('postgres_changes', { event: '*', schema: 'public', table: 'student_progress' }, () => {
-                fetchProgress();
-            })
-            .subscribe();
-
-        return () => supabase.removeChannel(channel);
-    }, [session]);
 
     // Fetch Content from DB
     useEffect(() => {
@@ -126,56 +111,7 @@ export const DataProvider = ({ children }) => {
         };
     }, []);
 
-    // Helper to calculate analytics dynamically
-    const computedAnalytics = React.useMemo(() => {
-        const engagement = initialAnalytics.engagement; // Keep mock for layout or build real
-        
-        const courseMap = {};
-        progressRecords.forEach(pr => {
-             if (!courseMap[pr.course_id]) courseMap[pr.course_id] = { completed: 0, dropped: 0 };
-             courseMap[pr.course_id].completed += 1; 
-        });
-        const courseCompletions = Object.keys(courseMap).map(cId => {
-             const c = content.find(x => x.id.toString() === cId);
-             return { name: c ? c.title : `Course ${cId}`, completed: courseMap[cId].completed, dropped: courseMap[cId].dropped };
-        });
-
-        const quizzesPassed = progressRecords.filter(p => p.passed_quiz).length;
-        const quizzesFailed = progressRecords.length - quizzesPassed;
-        const quizScores = [
-            { range: 'Passed', count: quizzesPassed },
-            { range: 'Attempted/Failed', count: quizzesFailed }
-        ];
-
-        return { 
-            engagement, 
-            courseCompletions: courseCompletions.length > 0 ? courseCompletions : initialAnalytics.courseCompletions, 
-            quizScores 
-        };
-    }, [progressRecords, content]);
-
-    const getStudentProgress = (studentId) => {
-        const myProgress = progressRecords.filter(p => p.student_id === studentId);
-        
-        const courseMap = {};
-        myProgress.forEach(pr => {
-             if (!courseMap[pr.course_id]) courseMap[pr.course_id] = 0;
-             courseMap[pr.course_id] += 1; 
-        });
-
-        const courses = Object.keys(courseMap).map(cId => {
-             const c = content.find(x => x.id.toString() === cId);
-             if (!c) return null;
-             return {
-                 id: c.id,
-                 title: c.title,
-                 completedLessons: courseMap[cId],
-                 totalLessons: Math.max(courseMap[cId], 5) // Fallback for visual progress
-             };
-        }).filter(Boolean);
-
-        return { courses, completedStepIndices: (courseId) => myProgress.filter(p => p.course_id.toString() === courseId.toString()).map(p => p.step_index) };
-    };
+    const getStudentProgress = (studentId) => studentProgress[studentId] || { completed: [], inProgress: [], courses: [] };
 
     const getLeaderboard = () => {
         return [...students].sort((a, b) => (b.points || 0) - (a.points || 0));
@@ -322,29 +258,6 @@ export const DataProvider = ({ children }) => {
         if (error) throw error;
     };
 
-    const markStepProgress = async (courseId, stepIndex, passedQuiz = false) => {
-         if (!currentUser) return;
-         const { error } = await supabase
-             .from('student_progress')
-             .insert([{
-                  student_id: currentUser.id,
-                  course_id: courseId,
-                  step_index: stepIndex,
-                  passed_quiz: passedQuiz
-             }]);
-             
-         if (error && error.code === '23505') {
-              if (passedQuiz) {
-                   await supabase
-                      .from('student_progress')
-                      .update({ passed_quiz: true })
-                      .eq('student_id', currentUser.id)
-                      .eq('course_id', courseId)
-                      .eq('step_index', stepIndex);
-              }
-         }
-    };
-
     return (
         <DataContext.Provider value={{
             students,
@@ -357,7 +270,7 @@ export const DataProvider = ({ children }) => {
             updateContent,
             currentUser,
             getStudentProgress,
-            analytics: computedAnalytics,
+            analytics,
             getLeaderboard,
             updateUser,
             getRecommendations,
@@ -365,8 +278,6 @@ export const DataProvider = ({ children }) => {
             addStep,
             updateStep,
             deleteStep,
-            markStepProgress,
-            progressRecords,
             loading,
             session
         }}>
